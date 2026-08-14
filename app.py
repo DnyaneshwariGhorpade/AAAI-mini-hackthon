@@ -25,9 +25,18 @@ app = Flask(__name__)
 CORS(app)
 
 client = QdrantClient(url=QDRANT_URL, timeout=60)
-dense_model = TextEmbedding(DENSE_MODEL)
-sparse_model = SparseTextEmbedding(SPARSE_MODEL)
+dense_model = None
+sparse_model = None
 groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+
+def get_models():
+    global dense_model, sparse_model
+    if dense_model is None:
+        dense_model = TextEmbedding(DENSE_MODEL)
+    if sparse_model is None:
+        sparse_model = SparseTextEmbedding(SPARSE_MODEL)
+    return dense_model, sparse_model
 SYSTEM_PROMPT = """You are a medical research assistant. Answer using ONLY the retrieved context below.
 Be factual and concise. If the context does not contain enough information to answer,
 say "I don't have enough information to answer your query" and nothing else.
@@ -35,6 +44,7 @@ Do not invent facts, drugs, or treatments. Where useful, cite the source title."
 
 
 def retrieve(query, title_filter=None):
+    dense_model, sparse_model = get_models()
     dense_vec = list(dense_model.embed([query]))[0].tolist()
     sp_obj = list(sparse_model.embed([query]))[0].as_object()
     sparse_vec = SparseVector(indices=sp_obj["indices"], values=sp_obj["values"])
