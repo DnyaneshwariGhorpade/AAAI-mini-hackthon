@@ -1,0 +1,35 @@
+# Environment & secrets
+.env
+.env.local
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# Data (large shards, DB files, models cache)
+data/
+db/
+qdrant/
+*.jsonl
+
+# Logs & state
+*.log
+*.progress
+
+# Node
+node_modules/
+.next/
+out/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
