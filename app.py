@@ -1,4 +1,5 @@
 import os
+import threading
 from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
@@ -9,9 +10,19 @@ from fastembed import TextEmbedding, SparseTextEmbedding
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Fusion, Prefetch, FusionQuery, FieldCondition, Filter, MatchValue, SparseVector,
+    VectorParams, Distance, SparseVectorParams, SparseIndexParams,
 )
 
+from ingest_qdrant import run_ingest_worker, COLLECTION as INGEST_COLLECTION
+
 load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent
+STATE_DIR = BASE_DIR / "data" / "state"
+SHARD_ID = os.getenv("SHARD_ID", "1__OwL8NQrRg51Vn-K9aYLCTNiwC3zBk5")
+SHARD_FILE = os.getenv("SHARD_FILE", "data/raw/medical_text_shard_001.jsonl")
+MAX_DOCS = int(os.getenv("MAX_DOCS", "120000"))
+INGEST_LOG = STATE_DIR / "ingest.log"
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.getenv("QDRANT_COLLECTION", "healthcare_hybrid")
@@ -38,6 +49,49 @@ def get_models():
     if sparse_model is None:
         sparse_model = SparseTextEmbedding(SPARSE_MODEL)
     return dense_model, sparse_model
+
+
+def ensure_collection():
+    if not client.collection_exists(COLLECTION):
+        client.create_collection(
+            collection_name=COLLECTION,
+            vectors_config={"dense": VectorParams(size=384, distance=Distance.COSINE)},
+            sparse_vectors_config={"sparse": SparseVectorParams(index=SparseIndexParams())},
+        )
+
+
+def start_ingestion():
+    try:
+        try:
+            n = client.count(collection_name=COLLECTION, exact=True).count
+        except Exception:
+            n = 0
+        if n > 0:
+            return
+        ensure_collection()
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        if not Path(SHARD_FILE).exists():
+            import gdown
+            print("[ingest] downloading shard ...", flush=True)
+            gdown.download(id=SHARD_ID, output=SHARD_FILE, quiet=True)
+        with open(INGEST_LOG, "w", encoding="utf-8") as lf:
+            lf.write("[ingest] starting background ingestion\n")
+        dense_model, sparse_model = get_models()
+        run_ingest_worker(SHARD_FILE, MAX_DOCS, client, dense_model, sparse_model,
+                          log=lambda m: _log_ingest(m))
+    except Exception as e:
+        _log_ingest(f"[ingest] FAILED: {e!r}")
+
+
+def _log_ingest(msg):
+    try:
+        with open(INGEST_LOG, "a", encoding="utf-8") as lf:
+            lf.write(msg + "\n")
+    except Exception:
+        pass
+
+
+threading.Thread(target=start_ingestion, daemon=True).start()
 SYSTEM_PROMPT = """You are a medical research assistant. Answer using ONLY the retrieved context below.
 Be factual and concise. If the context does not contain enough information to answer,
 say "I don't have enough information to answer your query" and nothing else.

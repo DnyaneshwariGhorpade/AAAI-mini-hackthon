@@ -65,7 +65,6 @@ def main(shard_path, max_docs=0, recreate=False):
     shard_path = Path(shard_path)
     if not shard_path.exists():
         raise FileNotFoundError(shard_path)
-    shard_name = shard_path.name
 
     client = QdrantClient(url=QDRANT_URL, timeout=120)
     if recreate or not client.collection_exists(COLLECTION):
@@ -80,6 +79,15 @@ def main(shard_path, max_docs=0, recreate=False):
 
     dense_model = TextEmbedding(DENSE_MODEL, threads=THREADS)
     sparse_model = SparseTextEmbedding(SPARSE_MODEL, threads=THREADS)
+    run_ingest_worker(shard_path, max_docs, client, dense_model, sparse_model)
+
+
+def run_ingest_worker(shard_path, max_docs, client, dense_model, sparse_model, log=print):
+    """Core ingestion loop, callable from a thread so it shares the parent process's models."""
+    shard_path = Path(shard_path)
+    if not shard_path.exists():
+        raise FileNotFoundError(shard_path)
+    shard_name = shard_path.name
 
     start_line = read_state(shard_name)
     points = []
@@ -118,8 +126,8 @@ def main(shard_path, max_docs=0, recreate=False):
                 total_upserted += len(points)
                 points = []
                 state_file(shard_name).write_text(str(i + 1))
-                print(f"  line {i+1:,}: upserted {total_upserted:,} chunks total "
-                      f"({time.time()-t0:.0f}s)", flush=True)
+                log(f"  line {i+1:,}: upserted {total_upserted:,} chunks total "
+                    f"({time.time()-t0:.0f}s)")
 
     if points:
         _flush(client, dense_model, sparse_model, points)
@@ -130,7 +138,7 @@ def main(shard_path, max_docs=0, recreate=False):
     while client.get_collection(COLLECTION).status != CollectionStatus.GREEN:
         time.sleep(1)
     info = client.get_collection(COLLECTION)
-    print(f"DONE. Collection points: {info.points_count:,} in {time.time()-t0:.0f}s", flush=True)
+    log(f"DONE. Collection points: {info.points_count:,} in {time.time()-t0:.0f}s")
 
 
 def _flush(client, dense_model, sparse_model, points):
