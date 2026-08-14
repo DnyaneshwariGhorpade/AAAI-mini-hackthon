@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -79,6 +80,26 @@ def health():
     except Exception:
         points = -1
     return jsonify({"status": "ok", "points": points, "ready": points > 0})
+
+
+@app.route("/api/debug", methods=["GET"])
+def debug():
+    out = {}
+    log_path = Path(__file__).resolve().parent / "data" / "state" / "ingest.log"
+    if log_path.exists():
+        lines = log_path.read_text(errors="ignore").splitlines()
+        out["ingest_log_tail"] = lines[-30:]
+    pid_path = Path(__file__).resolve().parent / "data" / "state" / "ingest.pid"
+    if pid_path.exists():
+        out["ingest_pid"] = pid_path.read_text().strip()
+    out["env"] = {
+        "QDRANT_URL": os.getenv("QDRANT_URL"),
+        "QDRANT_COLLECTION": os.getenv("QDRANT_COLLECTION"),
+        "GROQ_API_KEY": bool(os.getenv("GROQ_API_KEY")),
+        "EMBED_THREADS": os.getenv("EMBED_THREADS"),
+        "PORT": os.getenv("PORT"),
+    }
+    return jsonify(out)
 
 
 @app.route("/api/query", methods=["POST"])
