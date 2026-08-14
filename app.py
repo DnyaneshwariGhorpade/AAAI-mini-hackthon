@@ -28,9 +28,9 @@ QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION = os.getenv("QDRANT_COLLECTION", "healthcare_hybrid")
 DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SPARSE_MODEL = "Qdrant/bm25"
-DENSE_TOP_K = 20
-SPARSE_TOP_K = 20
-FUSION_K = 6
+DENSE_TOP_K = 30
+SPARSE_TOP_K = 30
+FUSION_K = 8
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 app = Flask(__name__)
@@ -92,10 +92,13 @@ def _log_ingest(msg):
 
 
 threading.Thread(target=start_ingestion, daemon=True).start()
-SYSTEM_PROMPT = """You are a medical research assistant. Answer using ONLY the retrieved context below.
-Be factual and concise. If the context does not contain enough information to answer,
-say "I don't have enough information to answer your query" and nothing else.
-Do not invent facts, drugs, or treatments. Where useful, cite the source title."""
+SYSTEM_PROMPT = """You are a medical research assistant that answers questions using ONLY the retrieved context below.
+Strict grounding rules:
+1. Every factual claim in your answer MUST be directly supported by the retrieved context, and must be followed by a citation like [n] matching the source number.
+2. If a piece of information is not present in the context, do NOT use your prior knowledge to fill the gap. Omit it entirely.
+3. If the context does not contain enough information to answer the question, respond with exactly: "I don't have enough information to answer your query." and nothing else.
+4. Do not invent facts, drugs, dosages, years, names, or relationships. If a number or fact is not stated in the context, do not produce it.
+5. Quote or closely paraphrase the source text. Keep the answer concise and factual."""
 
 
 def retrieve(query, title_filter=None):
@@ -180,7 +183,7 @@ def query():
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Question: {question}\n\nContext:\n{context}"},
             ],
-            temperature=0.2,
+            temperature=0.1,
             max_tokens=500,
         )
         answer = resp.choices[0].message.content
