@@ -31,7 +31,7 @@ SPARSE_MODEL = "Qdrant/bm25"
 DENSE_TOP_K = 30
 SPARSE_TOP_K = 30
 FUSION_K = 8
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 app = Flask(__name__)
 CORS(app)
